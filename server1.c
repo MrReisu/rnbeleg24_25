@@ -7,22 +7,22 @@
 #include <unistd.h>
 
 #define BUF_SIZE 1024  // Maximale Größe eines empfangenen Pakets
+#define PORT 50000     // Festgelegter Port
 
 // Funktion zur Ausgabe der Nutzungsanleitung
 void usage() {
-    printf("Usage: server <multicast_addr> <port>\n");
+    printf("Usage: server <multicast_addr>\n");
     exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[]) {
     // Überprüfung der Argumentanzahl
-    if (argc != 3) {
+    if (argc != 2) {
         usage();
     }
 
     // Einlesen der Kommandozeilenargumente
     char *multicast_addr = argv[1];  // IPv6-Multicast-Adresse
-    int port = atoi(argv[2]);        // Portnummer
 
     // Erstellen des Sockets für UDPv6
     int sock = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in6 local_addr;
     memset(&local_addr, 0, sizeof(local_addr));
     local_addr.sin6_family = AF_INET6;         // IPv6-Protokollfamilie
-    local_addr.sin6_port = htons(port);        // Lokaler Port
+    local_addr.sin6_port = htons(PORT);        // Lokaler Port
     local_addr.sin6_addr = in6addr_any;        // Empfang von allen Schnittstellen
 
     // Binden des Sockets an die lokale Adresse
