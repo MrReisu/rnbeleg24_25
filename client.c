@@ -62,61 +62,6 @@ int initializeSenderSocket(const char *multicast_addr, int port, struct sockaddr
     return sock;  // Gibt den erstellten Socket zurück
 }
 
-// Funktion zum Senden einer Kontrollnachricht
-void sendControlMessage(int sock, struct sockaddr_in6 *dest_addr, const char *message) {
-    if (sendto(sock, message, strlen(message), 0, (struct sockaddr *)dest_addr, sizeof(*dest_addr)) < 0) {
-        perror("sendto (control)");
-    } else {
-        printf("Sent control message: %s\n", message);
-    }
-}
-
-// Funktion zum Verbindungsaufbau
-void establishConnection(int sock, struct sockaddr_in6 *dest_addr) {
-    sendControlMessage(sock, dest_addr, "HELLO");
-    printf("Waiting for HELLO ACK...\n");
-
-    char buffer[BUF_SIZE];
-    struct sockaddr_in6 src_addr;
-    socklen_t src_addr_len = sizeof(src_addr);
-
-    ssize_t len = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&src_addr, &src_addr_len);
-    if (len > 0) {
-        buffer[len] = '\0';
-        if (strcmp(buffer, "HELLO ACK") == 0) {
-            printf("Connection established.\n");
-        } else {
-            printf("Unexpected message: %s\n", buffer);
-            exit(EXIT_FAILURE);
-        }
-    } else {
-        perror("recvfrom (HELLO ACK)");
-        exit(EXIT_FAILURE);
-    }
-}
-
-// Funktion zum Verbindungsabbau
-void terminateConnection(int sock, struct sockaddr_in6 *dest_addr) {
-    sendControlMessage(sock, dest_addr, "CLOSE");
-    printf("Waiting for CLOSE ACK...\n");
-
-    char buffer[BUF_SIZE];
-    struct sockaddr_in6 src_addr;
-    socklen_t src_addr_len = sizeof(src_addr);
-
-    ssize_t len = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&src_addr, &src_addr_len);
-    if (len > 0) {
-        buffer[len] = '\0';
-        if (strcmp(buffer, "CLOSE ACK") == 0) {
-            printf("Connection terminated.\n");
-        } else {
-            printf("Unexpected message: %s\n", buffer);
-        }
-    } else {
-        perror("recvfrom (CLOSE ACK)");
-    }
-}
-
 // Funktion zum Senden eines Pakets über UDPv6 (SR-Protokollschicht)
 void sendPacket(int sock, struct sockaddr_in6 *dest_addr, int seq_num, const char *data) {
     char packet[BUF_SIZE];  // Puffer für das Paket
@@ -141,12 +86,12 @@ void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr)
     struct timeval interval = {0, DEFAULT_INTERVAL};  // Zeitintervall für das Senden
     char buffer[BUF_SIZE];               // Puffer für das Lesen von Zeilen aus der Datei
     int seq_num = 0;                     // Aktuelle Sequenznummer des Pakets
-    int timeout_count = 0;               // Zählt, wie oft das Timeout erreicht wurde
 
     while (1) {
-        FD_ZERO(&readfds);
-        FD_SET(sock, &readfds);
+        FD_ZERO(&readfds);               // Leert die Datei-Deskriptoren-Menge
+        FD_SET(sock, &readfds);          // Fügt den Socket zur Überwachung hinzu
 
+        // Warten auf ein Ereignis (Timeout oder eingehende Nachricht)
         int activity = select(sock + 1, &readfds, NULL, NULL, &interval);
 
         if (activity < 0) {
@@ -155,42 +100,54 @@ void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr)
         }
 
         if (activity == 0) { // Timer abgelaufen
-            timeout_count++;
-            if (timeout_count >= 3) { // Nach 3 Intervallen weiter
-                printf("Timeout: Moving to next packet...\n");
-                timeout_count = 0;
-
-                if (readFileLine(file, buffer, BUF_SIZE)) {
-                    sendPacket(sock, dest_addr, seq_num, buffer);
-                    seq_num++;
-                } else {
-                    printf("End of file reached.\n");
-                    break;
-                }
+            // Timer abgelaufen: Sende eine neue Dateneinheit
+            if (readFileLine(file, buffer, BUF_SIZE)) {
+                sendPacket(sock, dest_addr, seq_num, buffer);
+                seq_num++;  // Erhöht die Sequenznummer für das nächste Paket
+            } else {
+                printf("\n End of file reached.\n");
+                break;  // Beendet die Schleife, wenn das Dateiende erreicht ist
             }
-        } else if (FD_ISSET(sock, &readfds)) { // Datenempfang
+        }
+
+        if (FD_ISSET(sock, &readfds)) { // Datenempfang
             char recv_buffer[BUF_SIZE];
             struct sockaddr_in6 src_addr;
             socklen_t src_addr_len = sizeof(src_addr);
 
+            // Empfang einer Nachricht
             ssize_t len = recvfrom(sock, recv_buffer, sizeof(recv_buffer) - 1, 0,
                                    (struct sockaddr *)&src_addr, &src_addr_len);
             if (len > 0) {
-                recv_buffer[len] = '\0';
-                if (strncmp(recv_buffer, "NACK:", 5) == 0) {
-                    int nack_seq = atoi(recv_buffer + 5);
-                    printf("Received NACK for packet %d. Resending...\n", nack_seq);
+                recv_buffer[len] = '\0';  // Null-Terminierung für die Verarbeitung als String
 
+                // Prüfen, ob es sich um eine NACK-Nachricht handelt
+                if (strncmp(recv_buffer, "NACK:", 5) == 0) {
+                    int nack_seq = atoi(recv_buffer + 5);  // Extrahiert die Sequenznummer aus der NACK
+
+                    // Überprüfen, ob die Sequenznummer im Sendepuffer vorhanden ist
                     if (nack_seq >= 0 && nack_seq < MAX_SEQ_NUM && packet_lengths[nack_seq] > 0) {
-                        sendto(sock, sent_packets[nack_seq], packet_lengths[nack_seq], 0,
-                               (struct sockaddr *)dest_addr, sizeof(*dest_addr));
-                        timeout_count = 0; // Timeout-Zähler zurücksetzen
+                        printf("Received NACK for packet %d. Resending...\n", nack_seq);
+
+                        // Erneutes Senden des Pakets
+                        if (sendto(sock, sent_packets[nack_seq], packet_lengths[nack_seq], 0,
+                                   (struct sockaddr *)dest_addr, sizeof(*dest_addr)) < 0) {
+                            perror("sendto (resend)");
+                        } else {
+                            printf("Resent packet %d: %s\n", nack_seq, sent_packets[nack_seq]);
+                        }
+                    } else {
+                        printf("Invalid NACK for packet %d.\n", nack_seq);
                     }
+                } else {
+                    printf("Received message: %s\n", recv_buffer);
                 }
+            } else {
+                perror("recvfrom");
             }
         }
 
-        // Intervall zurücksetzen
+        // Setzt das Intervall zurück
         interval.tv_sec = 0;
         interval.tv_usec = DEFAULT_INTERVAL;
     }
@@ -228,14 +185,8 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // Verbindungsaufbau
-    establishConnection(sock, &dest_addr);
-
     // Verwaltung von Timern und Ereignissen
     manageTimersAndEvents(sock, file, &dest_addr);
-
-    // Verbindungsabbau
-    terminateConnection(sock, &dest_addr);
 
     fclose(file);  // Schließt die Datei
     close(sock);   // Schließt den Socket
