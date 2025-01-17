@@ -6,7 +6,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <time.h>
-#include <fcntl.h>
 
 #define MAX_LINE 1024 // Maximale Länge einer Nachricht/Zeile
 #define INTERVAL 300000 // Intervallzeit für das Senden (300 ms in Mikrosekunden)
