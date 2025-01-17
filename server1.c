@@ -38,12 +38,30 @@ int main(int argc, char *argv[]) {
     local_addr.sin6_port = htons(port);        // Lokaler Port
     local_addr.sin6_addr = in6addr_any;        // Empfang von allen Schnittstellen
 
+    // Aktiviert die Wiederverwendung der Adresse
+    int optval = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt(SO_REUSEADDR)");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+
+    #ifdef SO_REUSEPORT
+    // Aktiviert die Wiederverwendung des Ports (falls verfügbar)
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt(SO_REUSEPORT)");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+    #endif
+
     // Binden des Sockets an die lokale Adresse
     if (bind(sock, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
         perror("bind");
         close(sock);
         exit(EXIT_FAILURE);
     }
+
 
     // Beitritt zur Multicast-Gruppe
     struct ipv6_mreq mreq;  // Multicast-Optionen
