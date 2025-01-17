@@ -10,7 +10,6 @@
 #define BUF_SIZE 1024             // Maximale Größe eines Datenpakets
 #define DEFAULT_INTERVAL 300000   // Zeitintervall für das Senden von Paketen in Mikrosekunden (300 ms)
 #define MAX_WINDOW_SIZE 10        // Maximale Fenstergröße
-#define PORT 50000                // Festgelegter Port
 
 // Funktion zum Lesen einer Zeile aus der Datei (Anwendungsschicht)
 int readFileLine(FILE *file, char *buffer, int buffer_size) {
@@ -18,7 +17,7 @@ int readFileLine(FILE *file, char *buffer, int buffer_size) {
 }
 
 // Funktion zum Initialisieren des UDPv6-Sendersockets (SR-Protokollschicht)
-int initializeSenderSocket(const char *multicast_addr, struct sockaddr_in6 *dest_addr) {
+int initializeSenderSocket(const char *multicast_addr, int port, struct sockaddr_in6 *dest_addr) {
     // Erstellt einen IPv6-Datagram-Socket
     int sock = socket(AF_INET6, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -29,7 +28,7 @@ int initializeSenderSocket(const char *multicast_addr, struct sockaddr_in6 *dest
     // Zieladresse vorbereiten
     memset(dest_addr, 0, sizeof(*dest_addr));
     dest_addr->sin6_family = AF_INET6;               // IPv6-Protokollfamilie
-    dest_addr->sin6_port = htons(PORT);              // Festgelegter Port
+    dest_addr->sin6_port = htons(port);              // Zielport
 
     // Umwandlung der Multicast-Adresse in binäres Format
     if (inet_pton(AF_INET6, multicast_addr, &dest_addr->sin6_addr) <= 0) {
@@ -108,15 +107,16 @@ void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr)
 
 int main(int argc, char *argv[]) {
     // Überprüfung der Argumentanzahl
-    if (argc != 4) {
-        printf("Usage: client <file> <multicast_addr> <window_size>\n");
+    if (argc != 5) {
+        printf("Usage: client <file> <multicast_addr> <port> <window_size>\n");
         exit(EXIT_FAILURE);
     }
 
     // Argumente einlesen
     char *filename = argv[1];           // Name der zu sendenden Datei
     char *multicast_addr = argv[2];     // IPv6-Multicast-Adresse
-    int window_size = atoi(argv[3]);    // Fenstergröße (1 bis MAX_WINDOW_SIZE)
+    int port = atoi(argv[3]);           // Zielport
+    int window_size = atoi(argv[4]);    // Fenstergröße (1 bis MAX_WINDOW_SIZE)
 
     // Überprüfung der Fenstergröße
     if (window_size < 1 || window_size > MAX_WINDOW_SIZE) {
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in6 dest_addr;  // Zieladresse für Multicast
 
     // Initialisiert den Socket für den Multicast-Versand
-    int sock = initializeSenderSocket(multicast_addr, &dest_addr);
+    int sock = initializeSenderSocket(multicast_addr, port, &dest_addr);
 
     // Öffnet die Datei im Lese-Modus
     FILE *file = fopen(filename, "r");
