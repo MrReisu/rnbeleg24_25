@@ -18,6 +18,15 @@ void usage(const char *progname) {
     fprintf(stderr, "Usage: %s <server_address> <filename> <window_size>\n", progname);
     exit(EXIT_FAILURE);
 }
+void remove_carriage_return(char *str) {
+    char *src, *dst;
+    for (src = dst = str; *src != '\0'; src++) {
+        if (*src != '\r') { // Zeichen \r überspringen
+            *dst++ = *src;
+        }
+    }
+    *dst = '\0'; // Nullterminierung beibehalten
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -28,6 +37,7 @@ int main(int argc, char *argv[]) {
     const char *filename = argv[2]; // Zu sendende Datei
     int window_size = atoi(argv[3]); // Fenstergröße
 
+//Falls atoi(argv[3]) eine 0 (fehlerhafter Wert) zurückgibt
     if (window_size < 1 || window_size > MAX_WINDOW_SIZE) {
         fprintf(stderr, "Window size must be between 1 and %d\n", MAX_WINDOW_SIZE);
         exit(EXIT_FAILURE);
@@ -65,14 +75,26 @@ int main(int argc, char *argv[]) {
     char response[MAX_LINE];
     struct timeval timeout = {5, 0}; // 5 Sekunden Timeout für Verbindungsaufbau
     fd_set read_fds;
-
     FD_ZERO(&read_fds);
     FD_SET(sock, &read_fds);
 
+    struct timeval timeout = {5, 0}; // 5 Sekunden Timeout
     int ret = select(sock + 1, &read_fds, NULL, NULL, &timeout);
+
     if (ret > 0 && FD_ISSET(sock, &read_fds)) {
-        recvfrom(sock, response, sizeof(response) - 1, 0, NULL, NULL);
-        response[sizeof(response) - 1] = '\0';
+        ssize_t len = recvfrom(sock, response, sizeof(response) - 1, 0, NULL, NULL);
+        if (len > 0) {
+            response[len] = '\0'; // Nullterminierung
+        }
+    } else if (ret == 0) {
+        printf("Timeout: No data received within 5 seconds.\n");
+    } else {
+        perror("select");
+    }
+        printf("Raw response: '%s'\n", response);
+        printf("Test1\n");
+        remove_carriage_return(response); // \r entfernen
+        printf("Cleaned response: '%s'\n", response);
         if (strcmp(response, "HELLO ACK") == 0) {
             printf("Received HELLO ACK. Connection established.\n");
         } else {
