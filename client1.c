@@ -1,4 +1,9 @@
-/* client.c */
+/* ToDo 
+Fehler einbauen
+-> Randomizer, wo zufällige Zeile nicht übertragen wird ggf. einbauen
+Anzeige wie viele Zeilen übertragen wurden und Fehlerquote angeben, als separaten code damit man es aktivieren und deaktivieren kann
+
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,7 +84,7 @@ void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr)
                 sendPacket(sock, dest_addr, seq_num, buffer);
                 seq_num++;  // Erhöht die Sequenznummer für das nächste Paket
             } else {
-                printf("End of file reached.");
+                printf("\nEnd of file reached.\n");
                 break;  // Beendet die Schleife, wenn das Dateiende erreicht ist
             }
         }
