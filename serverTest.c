@@ -39,18 +39,36 @@ void logMessageToFile(const char *filename, const char *message) {
     fclose(file);  // Schließt die Datei
 }
 
+// Funktion zur Verarbeitung von Kontrollnachrichten
+void handleControlMessage(const char *message, int sock, struct sockaddr_in6 *src_addr, socklen_t src_addr_len, int *expected_seq) {
+    if (strcmp(message, "HELLO") == 0) {
+        printf("Received HELLO. Sending HELLO ACK...\n");
+        sendto(sock, "HELLO ACK", strlen("HELLO ACK"), 0, (struct sockaddr *)src_addr, src_addr_len);
+        printf("HELLO ACK sent.\n");
+    } else if (strcmp(message, "CLOSE") == 0) {
+        printf("Received CLOSE. Sending CLOSE ACK...\n");
+        sendto(sock, "CLOSE ACK", strlen("CLOSE ACK"), 0, (struct sockaddr *)src_addr, src_addr_len);
+        printf("CLOSE ACK sent. Resetting expected sequence number to 0.\n");
+        *expected_seq = 0;  // Setze die erwartete Sequenznummer zurück
+    }
+}
+
+
 // Funktion zur Überprüfung der Sequenznummern und Generierung von NACKs
 void handleSequenceNumber(int sock, struct sockaddr_in6 *src_addr, socklen_t src_addr_len, int expected_seq, int received_seq) {
     if (received_seq != expected_seq) {
         // Lücke erkannt, sende NACK
+        printf("Sequence mismatch. Expected: %d, Received: %d. Sending NACK...\n", expected_seq, received_seq);
         char nack_msg[BUF_SIZE];
         snprintf(nack_msg, sizeof(nack_msg), "NACK:%d", expected_seq);
 
         if (sendto(sock, nack_msg, strlen(nack_msg), 0, (struct sockaddr *)src_addr, src_addr_len) < 0) {
             perror("sendto (NACK)");
         } else {
-            printf("Sent NACK for missing packet: %d\n", expected_seq);
+            printf("NACK for sequence %d sent.\n", expected_seq);
         }
+    } else {
+        printf("Sequence match. Expected: %d, Received: %d.\n", expected_seq, received_seq);
     }
 }
 
@@ -71,6 +89,8 @@ int main(int argc, char *argv[]) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
+
+    printf("Socket created. Binding to local address...\n");
 
     // Konfiguration der lokalen Adresse
     struct sockaddr_in6 local_addr;
@@ -104,6 +124,8 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    printf("Socket bound to port %d. Joining multicast group %s...\n", port, multicast_addr);
+
     // Beitritt zur Multicast-Gruppe
     struct ipv6_mreq mreq;  // Multicast-Optionen
     if (inet_pton(AF_INET6, multicast_addr, &mreq.ipv6mr_multiaddr) <= 0) {
@@ -119,52 +141,92 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    printf("Joined multicast group %s. Waiting for messages...\n", multicast_addr);
+
     char buffer[BUF_SIZE];  // Puffer für eingehende Nachrichten
     int expected_seq = 0;   // Nächste erwartete Sequenznummer
+    fd_set readfds;  // Datei-Deskriptoren-Menge für select()
+    struct timeval timeout;  // Timeout für select()
+
 
     // Endlosschleife für den Empfang von Multicast-Nachrichten
     while (1) {
-        struct sockaddr_in6 src_addr;  // Absenderadresse
-        socklen_t src_addr_len = sizeof(src_addr);
+        FD_ZERO(&readfds);  // Löscht die Deskriptoren-Menge
+        FD_SET(sock, &readfds);  // Fügt den Server-Socket zur Überwachung hinzu
 
-        // Empfang eines Pakets
-        ssize_t len = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&src_addr, &src_addr_len);
-        if (len < 0) {
-            perror("recvfrom");
+        timeout.tv_sec = 5;  // Timeout von 5 Sekunden
+        timeout.tv_usec = 0;
+
+        printf("Waiting for incoming messages...\n");
+
+        int activity = select(sock + 1, &readfds, NULL, NULL, &timeout);
+
+        if (activity < 0) {
+            perror("select");
             break;
         }
 
-        buffer[len] = '\0';  // Null-Terminierung des empfangenen Pakets
-
-        // Extrahieren der Sequenznummer
-        int received_seq;
-        char *payload = strchr(buffer, ':');
-        if (payload) {
-            *payload = '\0';  // Trennt die Sequenznummer vom Payload
-            payload++;
-            received_seq = atoi(buffer);
-        } else {
-            printf("Malformed packet: %s\n", buffer);
-            continue;
+        if (activity == 0) {
+            printf("\n Timeout: No messages received within 5 seconds.\n");
+            continue;  // Zurück zum Anfang der Schleife
         }
 
-        // Überprüfen der Sequenznummer und Generierung von NACKs bei Bedarf
-        handleSequenceNumber(sock, &src_addr, src_addr_len, expected_seq, received_seq);
+        if (FD_ISSET(sock, &readfds)) {
+            struct sockaddr_in6 src_addr;  // Absenderadresse
+            socklen_t src_addr_len = sizeof(src_addr);
+        
+            // Empfang eines Pakets
+            ssize_t len = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&src_addr, &src_addr_len);
+            if (len < 0) {
+                perror("recvfrom");
+                break;
+            }
 
-        // Protokollieren der empfangenen Nachricht
-        char log_msg[BUF_SIZE];
-        snprintf(log_msg, sizeof(log_msg), "Seq %d: %s", received_seq, payload);
-        logMessageToFile(output_file, log_msg);
+            buffer[len] = '\0';  // Null-Terminierung des empfangenen Pakets
+            printf("Received message: %s\n", buffer);
 
-        // Aktualisieren der erwarteten Sequenznummer
-        if (received_seq == expected_seq) {
-            expected_seq++;
-        } else {
-            printf("Out of order packet: expected %d, got %d\n", expected_seq, received_seq);
-        }
+            // Prüfen auf Kontrollnachrichten
+            if (strcmp(buffer, "HELLO") == 0 || strcmp(buffer, "CLOSE") == 0) {
+                handleControlMessage(buffer, sock, &src_addr, src_addr_len, &expected_seq);
+                if (strcmp(buffer, "CLOSE") == 0) {
+                    printf("Reset expected sequence number to 0 after CLOSE ACK.\n");
+                }
+                continue;
+            }
+
+
+            // Extrahieren der Sequenznummer
+            int received_seq;
+            char *payload = strchr(buffer, ':');
+            if (payload) {
+                *payload = '\0';  // Trennt die Sequenznummer vom Payload
+                payload++;
+                received_seq = atoi(buffer);
+            } else {
+                printf("Malformed packet: %s\n", buffer);
+                continue;
+            }
+            // Überprüfen der Sequenznummer und Generierung von NACKs bei Bedarf
+            handleSequenceNumber(sock, &src_addr, src_addr_len, expected_seq, received_seq);
+
+            // Protokollieren der empfangenen Nachricht
+            char log_msg[BUF_SIZE];
+            snprintf(log_msg, sizeof(log_msg), "Seq %d: %s", received_seq, payload);
+            logMessageToFile(output_file, log_msg);
+
+            // Aktualisieren der erwarteten Sequenznummer
+            if (received_seq == expected_seq) {
+                expected_seq++;
+            } else {
+                printf("Out of order packet: expected %d, got %d\n", expected_seq, received_seq);
+            }
     }
+    }
+
+    printf("Shutting down server...\n");
 
     // Schließen des Sockets
     close(sock);
     return 0;
-}
+    }
+
