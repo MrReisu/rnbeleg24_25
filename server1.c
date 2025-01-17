@@ -30,6 +30,14 @@ int main(int argc, char *argv[]) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
+    
+    // Wiederverwenden des Ports erlauben (nur für lokale Tests)
+    int trueValue = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &trueValue, sizeof(trueValue)) < 0) {
+        perror("setsockopt SO_REUSEADDR");
+        close(sock);
+        return EXIT_FAILURE;
+    }
 
     // Konfiguration der lokalen Adresse
     struct sockaddr_in6 local_addr;
