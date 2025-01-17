@@ -32,12 +32,21 @@ int main(int argc, char *argv[]) {
     }
     
     // Wiederverwenden des Ports erlauben (nur für lokale Tests)
-    int trueValue = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &trueValue, sizeof(trueValue)) < 0) {
-        perror("setsockopt SO_REUSEADDR");
+    int optval = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt(SO_REUSEADDR)");
         close(sock);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
+
+    #ifdef SO_REUSEPORT
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt(SO_REUSEPORT)");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+    #endif
+
 
     // Konfiguration der lokalen Adresse
     struct sockaddr_in6 local_addr;
