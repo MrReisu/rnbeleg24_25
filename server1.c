@@ -5,24 +5,48 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <time.h>
 
 #define BUF_SIZE 1024  // Maximale Größe eines empfangenen Pakets
 
 // Funktion zur Ausgabe der Nutzungsanleitung
 void usage() {
-    printf("Usage: server <multicast_addr> <port>\n");
+    printf("Usage: server <multicast_addr> <port> <output_file>\n");
     exit(EXIT_FAILURE);
+}
+
+// Funktion zum Hinzufügen von Datum und Uhrzeit zur Datei
+void logMessageToFile(const char *filename, const char *message) {
+    FILE *file = fopen(filename, "a");  // Öffnet die Datei im Anhängemodus, erstellt sie falls nötig
+    if (!file) {
+        perror("fopen");
+        exit(EXIT_FAILURE);
+    }
+
+    // Holt das aktuelle Datum und die aktuelle Uhrzeit
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+
+    // Formatiert Datum und Uhrzeit
+    char time_str[64];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);
+
+    // Nachricht mit Zeitstempel in die Datei schreiben
+    fprintf(file, "%s - %s\n", time_str, message);
+
+    fclose(file);  // Schließt die Datei
 }
 
 int main(int argc, char *argv[]) {
     // Überprüfung der Argumentanzahl
-    if (argc != 3) {
+    if (argc != 4) {
         usage();
     }
 
     // Einlesen der Kommandozeilenargumente
     char *multicast_addr = argv[1];  // IPv6-Multicast-Adresse
     int port = atoi(argv[2]);        // Portnummer
+    char *output_file = argv[3];     // Name der Ausgabedatei
 
     // Erstellen des Sockets für UDPv6
     int sock = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -38,8 +62,9 @@ int main(int argc, char *argv[]) {
     local_addr.sin6_port = htons(port);        // Lokaler Port
     local_addr.sin6_addr = in6addr_any;        // Empfang von allen Schnittstellen
 
-    // Aktiviert die Wiederverwendung der Adresse
     int optval = 1;
+
+    // Aktiviert die Wiederverwendung der Adresse
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
         perror("setsockopt(SO_REUSEADDR)");
         close(sock);
@@ -61,7 +86,6 @@ int main(int argc, char *argv[]) {
         close(sock);
         exit(EXIT_FAILURE);
     }
-
 
     // Beitritt zur Multicast-Gruppe
     struct ipv6_mreq mreq;  // Multicast-Optionen
@@ -94,8 +118,11 @@ int main(int argc, char *argv[]) {
 
         buffer[len] = '\0';  // Null-Terminierung des empfangenen Pakets
 
-        // Ausgabe der empfangenen Nachricht
-        printf("Received: %s\n", buffer);
+        // Nachricht mit Zeitstempel in die Datei schreiben
+        logMessageToFile(output_file, buffer);
+
+        // Optional: Nachricht auf der Konsole ausgeben
+        printf("Received and logged: %s\n", buffer);
     }
 
     // Schließen des Sockets
