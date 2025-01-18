@@ -221,7 +221,7 @@ int main(int argc, char *argv[]) {
 
     // Überprüfung der Fenstergröße
     if (window_size < 1 || window_size > MAX_WINDOW_SIZE) {
-        fprintf(stderr, "Window size must be between 1 and %d.\n", MAX_WINDOW_SIZE);
+        fprintf(stderr, "Window size must be between 1 and %d %d.\n", MAX_WINDOW_SIZE, window_size);
         exit(EXIT_FAILURE);
     }
 

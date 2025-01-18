@@ -1,10 +1,11 @@
+// client
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <time.h>
 
 #define BUF_SIZE 1024           // Maximale Größe eines Pakets
 #define DEFAULT_INTERVAL 300000 // Standard-Zeitintervall in Mikrosekunden
@@ -48,17 +49,6 @@ void sendPacket(int sock, struct sockaddr_in6 *dest_addr, int seq_num, const cha
     }
 }
 
-// Funktion zum Zufallsmischen eines Arrays
-void shuffle(int *array, int count) {
-    srand(time(NULL)); // Initialisieren des Zufallszahlengenerators
-    for (int i = count - 1; i > 0; i--) {
-        int j = rand() % (i + 1); // Zufälliger Index zwischen 0 und i
-        int temp = array[i];
-        array[i] = array[j];
-        array[j] = temp;
-    }
-}
-
 // Hauptfunktion
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -79,41 +69,28 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in6 dest_addr;
     int sock = initializeSenderSocket(multicast_addr, port, &dest_addr);
 
-    // Puffer für die Zeilen und Zähler
-    char *lines[BUF_SIZE];
-    int line_count = 0;
-
-    // Lese die Zeilen aus der Datei und speichere sie in einem Array
     char buffer[BUF_SIZE];
-    while (line_count < BUF_SIZE && fgets(buffer, sizeof(buffer), file)) {
-        lines[line_count] = strdup(buffer); // Speicher für die Zeile reservieren
-        line_count++;
-    }
-
-    fclose(file);
+    int seq_num = 1; // Start der Sequenznummer
 
     // Sende die initiale HELLO-Nachricht
     sendControlMessage(sock, &dest_addr, "HELLO");
 
-    // Erstelle ein Array von Sequenznummern, die zufällig gemischt werden
-    int sequence_numbers[line_count];
-    for (int i = 0; i < line_count; i++) {
-        sequence_numbers[i] = i + 1; // Start von 1
-    }
-
-    // Mische die Reihenfolge der Sequenznummern
-    shuffle(sequence_numbers, line_count);
-
-    // Sende die Pakete in zufälliger Reihenfolge
-    for (int i = 0; i < line_count; i++) {
-        int seq_num = sequence_numbers[i]; // Hol die Sequenznummer aus der gemischten Reihenfolge
-        sendPacket(sock, &dest_addr, seq_num, lines[seq_num - 1]); // -1 weil unser Array 0-basiert ist
-        usleep(DEFAULT_INTERVAL);
+    while (1) {
+        // Lies und sende eine Zeile aus der Datei, falls vorhanden
+        if (fgets(buffer, sizeof(buffer), file)) {
+            sendPacket(sock, &dest_addr, seq_num, buffer);
+            seq_num++; // Sequenznummer inkrementieren
+            usleep(DEFAULT_INTERVAL); // Wartezeit vor dem nächsten Paket
+        } else {
+            printf("End of file reached.\n");
+            break; // Beenden der Schleife, wenn das Ende der Datei erreicht ist
+        }
     }
 
     // Sende die abschließende CLOSE-Nachricht
     sendControlMessage(sock, &dest_addr, "CLOSE");
 
+    fclose(file);
     close(sock);
     return 0;
 }

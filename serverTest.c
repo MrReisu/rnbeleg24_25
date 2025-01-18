@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <time.h>
 
 #define BUF_SIZE 1024  // Maximale Größe eines Pakets
 
@@ -26,6 +25,10 @@ void handleControlMessage(const char *message, int sock, struct sockaddr_in6 *sr
         } else {
             printf("HELLO ACK sent via Multicast.\n");
         }
+
+        // Setze die erwartete Sequenznummer auf 1
+        *expected_seq = 1;
+        printf("Initialized expected sequence number to 1.\n");
     } else if (strcmp(message, "CLOSE") == 0) {
         printf("Received CLOSE. Sending CLOSE ACK via Multicast...\n");
 
@@ -35,8 +38,34 @@ void handleControlMessage(const char *message, int sock, struct sockaddr_in6 *sr
             printf("CLOSE ACK sent via Multicast.\n");
         }
 
+        // Setze die erwartete Sequenznummer zurück
         printf("Resetting expected sequence number to 0.\n");
-        *expected_seq = 0;  // Setze die erwartete Sequenznummer zurück
+        *expected_seq = 0;
+    } else if (strcmp(message, "HELLO ACK") == 0 || strcmp(message, "CLOSE ACK") == 0) {
+        printf("Received ACK message: %s. Ignoring.\n", message);
+    } else {
+        printf("Unknown control message: %s\n", message);
+    }
+}
+
+// Funktion zur Verarbeitung von Datenpaketen
+void handleDataPacket(const char *message, int *expected_seq) {
+    int seq_num;
+    char data[BUF_SIZE];
+
+    // Versuche die Nachricht zu parsen: "<seq_num>:<data>"
+    if (sscanf(message, "%d:%1023[^\n]", &seq_num, data) == 2) {
+        // Prüfen, ob die Sequenznummer korrekt ist
+        if (*expected_seq > 0 && seq_num == *expected_seq) {
+            printf("Received expected packet %d: %s\n", seq_num, data);
+            (*expected_seq)++;  // Erwarte das nächste Paket
+        } else if (*expected_seq == 0) {
+            printf("Ignoring data packet %d: No HELLO received to initialize sequence.\n", seq_num);
+        } else {
+            printf("Out-of-order packet received (expected %d, got %d): %s\n", *expected_seq, seq_num, data);
+        }
+    } else {
+        printf("Malformed data packet: %s\n", message);
     }
 }
 
@@ -96,13 +125,14 @@ int main(int argc, char *argv[]) {
         buffer[len] = '\0';  // Null-terminierter String
 
         // Debug: Zeige die empfangene Nachricht an
+        printf("======================================\n\n");
         printf("Received message: %s\n", buffer);
 
-        // Prüfe Kontrollnachricht und rufe handleControlMessage auf
-        if (strcmp(buffer, "HELLO") == 0 || strcmp(buffer, "CLOSE") == 0) {
+        // Prüfe Kontrollnachricht oder Datenpaket
+        if (strcmp(buffer, "HELLO") == 0 || strcmp(buffer, "CLOSE") == 0 || strcmp(buffer, "HELLO ACK") == 0 || strcmp(buffer, "CLOSE ACK") == 0) {
             handleControlMessage(buffer, sock, &src_addr, src_addr_len, &expected_seq);
         } else {
-            printf("Unknown message type: %s\n", buffer);
+            handleDataPacket(buffer, &expected_seq);
         }
     }
 
