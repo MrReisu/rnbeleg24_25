@@ -128,23 +128,13 @@ int main(int argc, char *argv[]) {
 
     // Beitritt zur Multicast-Gruppe
     struct ipv6_mreq mreq;  // Multicast-Optionen
-
-    // Multicast-Adresse setzen
     if (inet_pton(AF_INET6, multicast_addr, &mreq.ipv6mr_multiaddr) <= 0) {
         perror("inet_pton");
         close(sock);
         exit(EXIT_FAILURE);
     }
+    mreq.ipv6mr_interface = 0;  // Standard-Netzwerkschnittstelle
 
-    // Schnittstelle explizit setzen
-    mreq.ipv6mr_interface = if_nametoindex("eth0");  // Ersetze "eth0" durch die tatsächliche Schnittstelle
-    if (mreq.ipv6mr_interface == 0) {
-        perror("if_nametoindex");
-        close(sock);
-        exit(EXIT_FAILURE);
-    }
-
-    // Multicast-Beitritt
     if (setsockopt(sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) < 0) {
         perror("setsockopt");
         close(sock);
