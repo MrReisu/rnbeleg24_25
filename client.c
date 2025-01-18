@@ -118,7 +118,7 @@ void terminateConnection(int sock, struct sockaddr_in6 *dest_addr) {
 }
 
 // Funktion zum Senden eines Pakets über UDPv6 (SR-Protokollschicht)
-void sendPacket(int sock, struct sockaddr_in6 *dest_addr, int seq_num, const char *data) {
+void sendPacket(int sock, struct sockaddr_in6 *dest_addr, int seq_num, const char *data, float error_rate) {
     char packet[BUF_SIZE];  // Puffer für das Paket
 
     // Erstellen des Paketinhalts: Sequenznummer + Daten
@@ -128,6 +128,15 @@ void sendPacket(int sock, struct sockaddr_in6 *dest_addr, int seq_num, const cha
     strncpy(sent_packets[seq_num], packet, BUF_SIZE);
     packet_lengths[seq_num] = strlen(packet);
 
+    // Zufällige Zahl zur Simulation eines Fehlers generieren
+    float random_value = (float)rand() / RAND_MAX;
+
+    // Wenn der zufällige Wert kleiner als die Fehlerquote ist, überspringe das Senden
+    if (random_value < error_rate) {
+        printf("Packet %d dropped due to simulated error (error rate: %.2f)\n", seq_num, error_rate);
+        return;
+    }
+
     // Senden des Pakets an die Zieladresse
     if (sendto(sock, packet, strlen(packet), 0, (struct sockaddr *)dest_addr, sizeof(*dest_addr)) < 0) {
         perror("sendto");
@@ -136,7 +145,7 @@ void sendPacket(int sock, struct sockaddr_in6 *dest_addr, int seq_num, const cha
 }
 
 // Verwaltung von Timern und Ereignissen (SR-Protokollschicht)
-void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr) {
+void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr, float error_rate) {
     fd_set readfds;                      // Datei-Deskriptoren-Menge für select()
     struct timeval interval = {0, DEFAULT_INTERVAL};  // Zeitintervall für das Senden
     char buffer[BUF_SIZE];               // Puffer für das Lesen von Zeilen aus der Datei
@@ -161,7 +170,7 @@ void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr)
                 timeout_count = 0;
 
                 if (readFileLine(file, buffer, BUF_SIZE)) {
-                    sendPacket(sock, dest_addr, seq_num, buffer);
+                    sendPacket(sock, dest_addr, seq_num, buffer, error_rate);
                     seq_num++;
                 } else {
                     printf("End of file reached.\n");
@@ -198,8 +207,8 @@ void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr)
 
 int main(int argc, char *argv[]) {
     // Überprüfung der Argumentanzahl
-    if (argc != 5) {
-        printf("Usage: client <file> <multicast_addr> <port> <window_size>\n");
+    if (argc != 6) {
+        printf("Usage: client <file> <multicast_addr> <port> <window_size> <error_rate>\n");
         exit(EXIT_FAILURE);
     }
 
@@ -208,10 +217,17 @@ int main(int argc, char *argv[]) {
     char *multicast_addr = argv[2];     // IPv6-Multicast-Adresse
     int port = atoi(argv[3]);           // Zielport
     int window_size = atoi(argv[4]);    // Fenstergröße (1 bis MAX_WINDOW_SIZE)
+    float error_rate = atof(argv[5]);   // Fehlerquote
 
     // Überprüfung der Fenstergröße
     if (window_size < 1 || window_size > MAX_WINDOW_SIZE) {
         fprintf(stderr, "Window size must be between 1 and %d.\n", MAX_WINDOW_SIZE);
+        exit(EXIT_FAILURE);
+    }
+
+    // Überprüfung der Fehlerquote
+    if (error_rate < 0.0 || error_rate > 1.0) {
+        fprintf(stderr, "Error rate must be between 0.0 and 1.0.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -232,7 +248,7 @@ int main(int argc, char *argv[]) {
     establishConnection(sock, &dest_addr);
 
     // Verwaltung von Timern und Ereignissen
-    manageTimersAndEvents(sock, file, &dest_addr);
+    manageTimersAndEvents(sock, file, &dest_addr, error_rate);
 
     // Verbindungsabbau
     terminateConnection(sock, &dest_addr);
