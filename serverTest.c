@@ -42,7 +42,12 @@ void logMessageToFile(const char *filename, const char *message) {
 // Funktion zur Verarbeitung von Kontrollnachrichten
 void handleControlMessage(const char *message, int sock, struct sockaddr_in6 *src_addr, socklen_t src_addr_len, int *expected_seq) {
     if (strcmp(message, "HELLO") == 0) {
-        printf("Received HELLO. Sending HELLO ACK...\n");
+        char addr_str[INET6_ADDRSTRLEN]; // Buffer für die IPv6-Adresse
+        if (inet_ntop(AF_INET6, &src_addr->sin6_addr, addr_str, sizeof(addr_str)) == NULL) {
+            perror("inet_ntop");
+        } else {
+            printf("Received HELLO. Sending HELLO ACK to: %s\n", addr_str);
+        }
         sendto(sock, "HELLO ACK", strlen("HELLO ACK"), 0, (struct sockaddr *)src_addr, src_addr_len);
         printf("HELLO ACK sent.\n");
     } else if (strcmp(message, "CLOSE") == 0) {
