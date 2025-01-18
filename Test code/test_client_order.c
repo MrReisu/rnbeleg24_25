@@ -54,22 +54,23 @@ void sendPacket(int sock, struct sockaddr_in6 *dest_addr, int seq_num, const cha
 
 // Funktion zum Senden von Paketen in zufälliger Reihenfolge
 void sendPacketsInRandomOrder(int sock, struct sockaddr_in6 *dest_addr, const char *data) {
-    int seq_nums[MAX_SEQ_NUM];
-    for (int i = 0; i < MAX_SEQ_NUM; i++) {
+    int max = 10;
+    int seq_nums[max];
+    for (int i = 0; i < max; i++) {
         seq_nums[i] = i;  // Initialisieren der Sequenznummern
     }
 
     // Zufällige Reihenfolge der Sequenznummern generieren
     srand(time(NULL));  // Initialisieren des Zufallszahlengenerators
-    for (int i = 0; i < MAX_SEQ_NUM; i++) {
-        int j = rand() % MAX_SEQ_NUM;  // Zufälliger Index
+    for (int i = 0; i < max; i++) {
+        int j = rand() % max;  // Zufälliger Index
         int temp = seq_nums[i];
         seq_nums[i] = seq_nums[j];
         seq_nums[j] = temp;
     }
 
     // Senden der Pakete in der zufälligen Reihenfolge
-    for (int i = 0; i < MAX_SEQ_NUM; i++) {
+    for (int i = 0; i < max; i++) {
         int seq_num = seq_nums[i];
         sendPacket(sock, dest_addr, seq_num, data);  // Die ursprüngliche Funktion zum Senden eines Pakets aufrufen
     }
