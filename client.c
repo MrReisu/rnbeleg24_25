@@ -15,6 +15,12 @@
 char sent_packets[MAX_SEQ_NUM][BUF_SIZE];  // Puffer für gesendete Pakete
 int packet_lengths[MAX_SEQ_NUM];          // Längen der gesendeten Pakete
 
+// Funktion zur Ausgabe der Nutzungsanleitung
+void usage() {
+    printf("Usage: client <file> <multicast_addr> <port> <window_size> <error_rate>\n");
+    exit(EXIT_FAILURE);
+}
+
 // Funktion zum Lesen einer Zeile aus der Datei (Anwendungsschicht)
 int readFileLine(FILE *file, char *buffer, int buffer_size) {
     return fgets(buffer, buffer_size, file) != NULL;  // Liest eine Zeile und gibt 1 zurück, wenn erfolgreich
@@ -208,7 +214,7 @@ void manageTimersAndEvents(int sock, FILE *file, struct sockaddr_in6 *dest_addr,
 int main(int argc, char *argv[]) {
     // Überprüfung der Argumentanzahl
     if (argc != 6) {
-        printf("Usage: client <file> <multicast_addr> <port> <window_size> <error_rate>\n");
+        usage();
         exit(EXIT_FAILURE);
     }
 
